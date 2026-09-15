@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VOID RUNNER</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #050505;
+    font-family: Arial, sans-serif;
+}
+
+canvas {
+    display: block;
+}
+
+#overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    color: white;
+    z-index: 10;
+}
+
+#hud {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.65);
+    font-size: 15px;
+    line-height: 1.7;
+}
+
+#title {
+    font-size: 20px;
+    font-weight: bold;
+}
+
+#message {
+    position: absolute;
+    left: 50%;
+    bottom: 45px;
+    transform: translateX(-50%);
+    padding: 12px 20px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.75);
+    font-size: 16px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+#startScreen {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+        radial-gradient(
+            circle at center,
+            #20283b 0%,
+            #090a0f 45%,
+            #020204 100%
+        );
+    color: white;
+}
+
+#panel {
+    width: min(90%, 600px);
+    padding: 40px;
+    border-radius: 22px;
+    background: rgba(10, 12, 18, 0.94);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 30px 100px rgba(0,0,0,0.7);
+    text-align: center;
+}
+
+#panel h1 {
+    margin: 0 0 12px 0;
+    font-size: 46px;
+    letter-spacing: 4px;
+}
+
+#panel p {
+    color: #aaa;
+    line-height: 1.6;
+}
+
+#vrButton {
+    margin-top: 20px;
+    padding: 15px 32px;
+    border: none;
+    border-radius: 12px;
+    background: white;
+    color: black;
+    font-size: 17px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+#vrButton:hover {
+    background: #d8d8d8;
+}
+
+#desktopControls {
+    margin-top: 20px;
+    color: #777;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+#crosshair {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    margin-top: -4px;
+    border: 1px solid white;
+    border-radius: 50%;
+    pointer-events: none;
+    opacity: 0.7;
+}
+</style>
+</head>
+
+<body>
+
+<div id="startScreen">
+    <div id="panel">
+        <h1>VOID RUNNER</h1>
+
+        <p>
+            Enter the abandoned facility, collect all five
+            energy cores, and return them to the extraction zone.
+        </p>
+
+        <button id="vrButton">
+            ENTER VR
+        </button>
+
+        <div id="desktopControls">
+            VR:<br>
+            Left stick = movement<br>
+            Right stick = turning<br>
+            Trigger = grab / release
+            <br><br>
+            Desktop:<br>
+            WASD = movement<br>
+            Mouse = look
+        </div>
+    </div>
+</div>
+
+<div id="overlay">
+
+    <div id="hud">
+        <div id="title">VOID RUNNER</div>
+
+        Cores:
+        <span id="score">0</span>
+        / 5
+
+        <br>
+
+        Status:
+        <span id="status">SEARCH</span>
+    </div>
+
+    <div id="message"></div>
+
+</div>
+
+<div id="crosshair"></div>
+
+
+<script type="module">
+
+import * as THREE from
+"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
+
+
+// ============================================================
+// BASIC SETUP
+// ============================================================
+
+const scene = new THREE.Scene();
+
+scene.background =
+    new THREE.Color(0x06070b);
+
+scene.fog =
+    new THREE.Fog(
+        0x06070b,
+        10,
+        75
+    );
+
+
+// ============================================================
+// PLAYER
+// ============================================================
+
+const player = new THREE.Group();
+
+player.position.set(
+    0,
+    0,
+    18
+);
+
+scene.add(player);
+
+
+// ============================================================
+// CAMERA
+// ============================================================
+
+const camera =
+    new THREE.PerspectiveCamera(
+        70,
+        window.innerWidth /
+        window.innerHeight,
+        0.05,
+        200
+    );
+
+camera.position.set(
+    0,
+    1.65,
+    0
+);
+
+player.add(camera);
+
+
+// ============================================================
+// RENDERER
+// ============================================================
+
+const renderer =
+    new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference: "high-performance"
+    });
+
+renderer.setPixelRatio(
+    Math.min(
+        window.devicePixelRatio,
+        2
+    )
+);
+
+renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+);
+
+renderer.xr.enabled = true;
+
+renderer.xr.setReferenceSpaceType(
+    "local-floor"
+);
+
+renderer.shadowMap.enabled = true;
+
+renderer.shadowMap.type =
+    THREE.PCFSoftShadowMap;
+
+document.body.appendChild(
+    renderer.domElement
+);
+
+
+// ============================================================
+// LIGHTING
+// ============================================================
+
+const ambient =
+    new THREE.HemisphereLight(
+        0x8899ff,
+        0x111111,
+        1.2
+    );
+
+scene.add(ambient);
+
+
+const mainLight =
+    new THREE.DirectionalLight(
+        0xffffff,
+        1.6
+    );
+
+mainLight.position.set(
+    10,
+    20,
+    10
+);
+
+mainLight.castShadow = true;
+
+mainLight.shadow.mapSize.width = 2048;
+mainLight.shadow.mapSize.height = 2048;
+
+scene.add(mainLight);
+
+
+// ============================================================
+// MATERIALS
+// ============================================================
+
+const floorMaterial =
+    new THREE.MeshStandardMaterial({
+        color: 0x181a20,
+        roughness: 0.9
+    });
+
+
+const wallMaterial =
+    new THREE.MeshStandardMaterial({
+        color: 0x30343d,
+        roughness: 0.8
+    });
+
+
+const metalMaterial =
+    new THREE.MeshStandardMaterial({
+        color: 0x555b66,
+        metalness: 0.8,
+        roughness: 0.3
+    });
+
+
+const coreMaterial =
+    new THREE.MeshStandardMaterial({
+        color: 0x00ffff,
+        emissive: 0x00ffff,
+        emissiveIntensity: 5
+    });
+
+
+const extractionMaterial =
+    new THREE.MeshStandardMaterial({
+        color: 0x00ff66,
+        emissive: 0x00ff66,
+        emissiveIntensity: 3,
+        transparent: true,
+        opacity: 0.65
+    });
+
+
+// ============================================================
+// FLOOR
+// ============================================================
+
+const floor =
+    new THREE.Mesh(
+        new THREE.PlaneGeometry(
+            100,
+            100
+        ),
+        floorMaterial
+    );
+
+floor.rotation.x =
+    -Math.PI / 2;
+
+floor.receiveShadow = true;
+
+scene.add(floor);
+
+
+// ============================================================
+// GRID
+// ============================================================
+
+const grid =
+    new THREE.GridHelper(
+        100,
+        100,
+        0x384052,
+        0x171a22
+    );
+
+grid.position.y = 0.01;
+
+scene.add(grid);
+
+
+// ============================================================
+// WALL CREATOR
+// ============================================================
+
+function createWall(
+    x,
+    y,
+    z,
+    width,
+    height,
+    depth
+) {
+
+    const wall =
+        new THREE.Mesh(
+            new THREE.BoxGeometry(
+                width,
+                height,
+                depth
+            ),
+            wallMaterial
+        );
+
+    wall.position.set(
+        x,
+        y,
+        z
+    );
+
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+
+    scene.add(wall);
+
+    return wall;
+}
+
+
+// ============================================================
+// OUTER WALLS
+// ============================================================
+
+createWall(
+    0,
+    2,
+    -25,
+    50,
+    4,
+    1
+);
+
+createWall(
+    0,
+    2,
+    25,
+    50,
+    4,
+    1
+);
+
+createWall(
+    -25,
+    2,
+    0,
+    1,
+    4,
+    50
+);
+
+createWall(
+    25,
+    2,
+    0,
+    1,
+    4,
+    50
+);
+
+
+// ============================================================
+// INTERIOR STRUCTURES
+// ============================================================
+
+createWall(
+    -12,
+    2,
+    -5,
+    1,
+    4,
+    18
+);
+
+createWall(
+    12,
+    2,
+    5,
+    1,
+    4,
+    18
+);
+
+createWall(
+    -4,
+    2,
+    8,
+    10,
+    4,
+    1
+);
+
+createWall(
+    7,
+    2,
+    -10,
+    14,
+    4,
+    1
+);
+
+
+// ============================================================
+// PILLARS
+// ============================================================
+
+function createPillar(x, z) {
+
+    const pillar =
+        new THREE.Mesh(
+            new THREE.BoxGeometry(
+                1.4,
+                5,
+                1.4
+            ),
+            metalMaterial
+        );
+
+    pillar.position.set(
+        x,
+        2.5,
+        z
+    );
+
+    pillar.castShadow = true;
+    pillar.receiveShadow = true;
+
+    scene.add(pillar);
+
+    const light =
+        new THREE.PointLight(
+            0x3344ff,
+            2,
+            8
+        );
+
+    light.position.set(
+        x,
+        4,
+        z
+    );
+
+    scene.add(light);
+}
+
+
+createPillar(-18, -17);
+createPillar(18, -17);
+createPillar(-18, 17);
+createPillar(18, 17);
+createPillar(5, 15);
+createPillar(-5, -15);
+
+
+// ============================================================
+// EXTRACTION ZONE
+// ============================================================
+
+const extraction =
+    new THREE.Mesh(
+        new THREE.CylinderGeometry(
+            3,
+            3,
+            0.15,
+            48
+        ),
+        extractionMaterial
+    );
+
+extraction.position.set(
+    0,
+    0.08,
+    18
+);
+
+scene.add(extraction);
+
+
+const extractionLight =
+    new THREE.PointLight(
+        0x00ff66,
+        4,
+        12
+    );
+
+extractionLight.position.set(
+    0,
+    1,
+    18
+);
+
+scene.add(extractionLight);
+
+
+// ============================================================
+// CORES
+// ============================================================
+
+const cores = [];
+
+const corePositions = [
+    [-18, 1.2, -18],
+    [18, 1.2, -16],
+    [-17, 1.2, 10],
+    [16, 1.2, 12],
+    [0, 1.2, -18]
+];
+
+
+function createCore(
+    x,
+    y,
+    z
+) {
+
+    const group =
+        new THREE.Group();
+
+    group.position.set(
+        x,
+        y,
+        z
+    );
+
+    scene.add(group);
+
+
+    const body =
+        new THREE.Mesh(
+            new THREE.IcosahedronGeometry(
+                0.65,
+                1
+            ),
+            coreMaterial
+        );
+
+    body.castShadow = true;
+
+    group.add(body);
+
+
+    const ring =
+        new THREE.Mesh(
+            new THREE.TorusGeometry(
+                0.9,
+                0.06,
+                12,
+                32
+            ),
+            coreMaterial
+        );
+
+    group.add(ring);
+
+
+    const light =
+        new THREE.PointLight(
+            0x00ffff,
+            3,
+            8
+        );
+
+    group.add(light);
+
+
+    group.userData.held = false;
+    group.userData.delivered = false;
+    group.userData.body = body;
+    group.userData.ring = ring;
+
+    cores.push(group);
+
+    return group;
+}
+
+
+for (const position of corePositions) {
+
+    createCore(
+        position[0],
+        position[1],
+        position[2]
+    );
+}
+
+
+// ============================================================
+// CONTROLLERS
+// ============================================================
+
+const controllers = [];
+
+const controllerVisuals = [];
+
+const grabbedObjects = {
+    left: null,
+    right: null
+};
+
+
+// ============================================================
+// CONTROLLER RAY
+// ============================================================
+
+function createControllerVisual(
+    controller
+) {
+
+    const ray =
+        new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                0.015,
+                0.015,
+                2,
+                8
+            ),
+            new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.25
+            })
+        );
+
+    ray.rotation.x =
+        -Math.PI / 2;
+
+    ray.position.z = -1;
+
+    controller.add(ray);
+
+    return ray;
+}
+
+
+// ============================================================
+// CONTROLLER EVENTS
+// ============================================================
+
+function setupController(
+    index
+) {
+
+    const controller =
+        renderer.xr.getController(index);
+
+    controller.addEventListener(
+        "connected",
+        function(event) {
+
+            controller.userData.handedness =
+                event.data.handedness;
+
+            controller.userData.inputSource =
+                event.data;
+        }
+    );
+
+
+    controller.addEventListener(
+        "selectstart",
+        function() {
+
+            const hand =
+                controller.userData.handedness;
+
+            grabObject(
+                controller,
+                hand
+            );
+        }
+    );
+
+
+    controller.addEventListener(
+        "selectend",
+        function() {
+
+            const hand =
+                controller.userData.handedness;
+
+            releaseObject(hand);
+        }
+    );
+
+
+    player.add(controller);
+
+    controllers.push(controller);
+
+    controllerVisuals.push(
+        createControllerVisual(
+            controller
+        )
+    );
+}
+
+
+setupController(0);
+setupController(1);
+
+
+// ============================================================
+// GRAB
+// ============================================================
+
+function grabObject(
+    controller,
+    hand
+) {
+
+    if (!hand) {
+        return;
+    }
+
+    if (grabbedObjects[hand]) {
+        return;
+    }
+
+
+    const controllerPosition =
+        new THREE.Vector3();
+
+    controller.getWorldPosition(
+        controllerPosition
+    );
+
+
+    let closest = null;
+
+    let closestDistance = 1.5;
+
+
+    for (const core of cores) {
+
+        if (
+            core.userData.held ||
+            core.userData.delivered
+        ) {
+            continue;
+        }
+
+
+        const corePosition =
+            new THREE.Vector3();
+
+        core.getWorldPosition(
+            corePosition
+        );
+
+
+        const distance =
+            controllerPosition.distanceTo(
+                corePosition
+            );
+
+
+        if (distance < closestDistance) {
+
+            closestDistance = distance;
+
+            closest = core;
+        }
+    }
+
+
+    if (!closest) {
+        return;
+    }
+
+
+    grabbedObjects[hand] =
+        closest;
+
+    closest.userData.held =
+        true;
+
+
+    controller.add(
+        closest
+    );
+
+
+    closest.position.set(
+        0,
+        0,
+        -0.45
+    );
+
+    closest.rotation.set(
+        0,
+        0,
+        0
+    );
+
+
+    showMessage(
+        "CORE GRABBED"
+    );
+}
+
+
+// ============================================================
+// RELEASE
+// ============================================================
+
+function releaseObject(
+    hand
+) {
+
+    const object =
+        grabbedObjects[hand];
+
+    if (!object) {
+        return;
+    }
+
+
+    const worldPosition =
+        new THREE.Vector3();
+
+    object.getWorldPosition(
+        worldPosition
+    );
+
+
+    scene.attach(
+        object
+    );
+
+
+    object.position.copy(
+        worldPosition
+    );
+
+
+    object.userData.held =
+        false;
+
+
+    grabbedObjects[hand] =
+        null;
+
+
+    showMessage(
+        "CORE RELEASED"
+    );
+}
+
+
+// ============================================================
+// SCORE
+// ============================================================
+
+let score = 0;
+
+const scoreElement =
+    document.getElementById(
+        "score"
+    );
+
+const statusElement =
+    document.getElementById(
+        "status"
+    );
+
+
+function updateScore() {
+
+    scoreElement.textContent =
+        score;
+
+    if (score >= 5) {
+
+        statusElement.textContent =
+            "COMPLETE";
+
+        showMessage(
+            "MISSION COMPLETE!"
+        );
+
+    } else {
+
+        statusElement.textContent =
+            "SEARCH";
+    }
+}
+
+
+// ============================================================
+// MESSAGE
+// ============================================================
+
+const messageElement =
+    document.getElementById(
+        "message"
+    );
+
+let messageTimer = null;
+
+
+function showMessage(
+    text
+) {
+
+    messageElement.textContent =
+        text;
+
+    messageElement.style.opacity =
+        "1";
+
+
+    clearTimeout(
+        messageTimer
+    );
+
+
+    messageTimer =
+        setTimeout(
+            function() {
+
+                messageElement.style.opacity =
+                    "0";
+
+            },
+            1800
+        );
+}
+
+
+// ============================================================
+// CORE DELIVERY
+// ============================================================
+
+function checkDelivery() {
+
+    for (const core of cores) {
+
+        if (
+            core.userData.delivered ||
+            core.userData.held
+        ) {
+            continue;
+        }
+
+
+        const corePosition =
+            new THREE.Vector3();
+
+        core.getWorldPosition(
+            corePosition
+        );
+
+
+        const extractionPosition =
+            extraction.position;
+
+
+        const distance =
+            corePosition.distanceTo(
+                extractionPosition
+            );
+
+
+        if (distance < 3) {
+
+            core.userData.delivered =
+                true;
+
+
+            core.visible =
+                false;
+
+
+            score++;
+
+            updateScore();
+
+            showMessage(
+                "CORE DELIVERED"
+            );
+        }
+    }
+}
+
+
+// ============================================================
+// CORE ANIMATION
+// ============================================================
+
+const clock =
+    new THREE.Clock();
+
+
+function animateCores() {
+
+    const time =
+        clock.getElapsedTime();
+
+
+    for (const core of cores) {
+
+        if (
+            core.userData.held ||
+            core.userData.delivered
+        ) {
+            continue;
+        }
+
+
+        core.rotation.y =
+            time * 1.5;
+
+
+        core.userData.ring.rotation.x =
+            time * 2;
+
+
+        core.userData.ring.rotation.z =
+            time;
+    }
+}
+
+
+// ============================================================
+// VR MOVEMENT
+// ============================================================
+
+const moveVector =
+    new THREE.Vector3();
+
+const forwardVector =
+    new THREE.Vector3();
+
+const rightVector =
+    new THREE.Vector3();
+
+const tempQuaternion =
+    new THREE.Quaternion();
+
+
+function updateVRMovement(
+    delta
+) {
+
+    const session =
+        renderer.xr.getSession();
+
+    if (!session) {
+        return;
+    }
+
+
+    for (
+        const source of session.inputSources
+    ) {
+
+        if (
+            !source.gamepad ||
+            !source.handedness
+        ) {
+            continue;
+        }
+
+
+        const axes =
+            source.gamepad.axes;
+
+
+        if (!axes ||
+            axes.length < 2
+        ) {
+            continue;
+        }
+
+
+        if (
+            source.handedness === "left"
+        ) {
+
+            const x =
+                axes[2] ?? axes[0] ?? 0;
+
+            const y =
+                axes[3] ?? axes[1] ?? 0;
+
+
+            moveVector.set(
+                x,
+                0,
+                y
+            );
+
+
+            if (
+                moveVector.lengthSq() <
+                0.02
+            ) {
+                continue;
+            }
+
+
+            moveVector.clampLength(
+                0,
+                1
+            );
+
+
+            camera.getWorldDirection(
+                forwardVector
+            );
+
+
+            forwardVector.y =
+                0;
+
+            forwardVector.normalize();
+
+
+            rightVector.crossVectors(
+                forwardVector,
+                new THREE.Vector3(
+                    0,
+                    1,
+                    0
+                )
+            ).normalize();
+
+
+            const movement =
+                new THREE.Vector3();
+
+
+            movement.addScaledVector(
+                rightVector,
+                moveVector.x
+            );
+
+
+            movement.addScaledVector(
+                forwardVector,
+                -moveVector.z
+            );
+
+
+            player.position.addScaledVector(
+                movement,
+                delta * 4
+            );
+        }
+
+
+        if (
+            source.handedness === "right"
+        ) {
+
+            const x =
+                axes[2] ?? axes[0] ?? 0;
+
+
+            if (
+                Math.abs(x) >
+                0.35
+            ) {
+
+                player.rotation.y -=
+                    x * delta * 1.8;
+            }
+        }
+    }
+}
+
+
+// ============================================================
+// PLAYER BOUNDS
+// ============================================================
+
+function clampPlayer() {
+
+    player.position.x =
+        THREE.MathUtils.clamp(
+            player.position.x,
+            -23,
+            23
+        );
+
+
+    player.position.z =
+        THREE.MathUtils.clamp(
+            player.position.z,
+            -23,
+            23
+        );
+}
+
+
+// ============================================================
+// DESKTOP CONTROLS
+// ============================================================
+
+const keys = {};
+
+let mouseLocked =
+    false;
+
+let desktopYaw = 0;
+let desktopPitch = 0;
+
+
+window.addEventListener(
+    "keydown",
+    function(event) {
+
+        keys[event.code] = true;
+    }
+);
+
+
+window.addEventListener(
+    "keyup",
+    function(event) {
+
+        keys[event.code] = false;
+    }
+);
+
+
+renderer.domElement.addEventListener(
+    "click",
+    function() {
+
+        if (
+            !renderer.xr.isPresenting
+        ) {
+
+            renderer.domElement
+                .requestPointerLock();
+        }
+    }
+);
+
+
+document.addEventListener(
+    "pointerlockchange",
+    function() {
+
+        mouseLocked =
+            document.pointerLockElement ===
+            renderer.domElement;
+    }
+);
+
+
+document.addEventListener(
+    "mousemove",
+    function(event) {
+
+        if (
+            !mouseLocked ||
+            renderer.xr.isPresenting
+        ) {
+            return;
+        }
+
+
+        desktopYaw -=
+            event.movementX *
+            0.002;
+
+
+        desktopPitch -=
+            event.movementY *
+            0.002;
+
+
+        desktopPitch =
+            THREE.MathUtils.clamp(
+                desktopPitch,
+                -1.4,
+                1.4
+            );
+
+
+        player.rotation.y =
+            desktopYaw;
+
+
+        camera.rotation.x =
+            desktopPitch;
+    }
+);
+
+
+function updateDesktopMovement(
+    delta
+) {
+
+    if (
+        renderer.xr.isPresenting
+    ) {
+        return;
+    }
+
+
+    const direction =
+        new THREE.Vector3();
+
+
+    if (keys["KeyW"]) {
+        direction.z -= 1;
+    }
+
+    if (keys["KeyS"]) {
+        direction.z += 1;
+    }
+
+    if (keys["KeyA"]) {
+        direction.x -= 1;
+    }
+
+    if (keys["KeyD"]) {
+        direction.x += 1;
+    }
+
+
+    if (
+        direction.lengthSq() === 0
+    ) {
+        return;
+    }
+
+
+    direction.normalize();
+
+
+    const movement =
+        new THREE.Vector3();
+
+
+    movement.x =
+        direction.x *
+        Math.cos(player.rotation.y) -
+        direction.z *
+        Math.sin(player.rotation.y);
+
+
+    movement.z =
+        direction.x *
+        Math.sin(player.rotation.y) +
+        direction.z *
+        Math.cos(player.rotation.y);
+
+
+    player.position.x +=
+        movement.x *
+        delta *
+        5;
+
+
+    player.position.z +=
+        movement.z *
+        delta *
+        5;
+}
+
+
+// ============================================================
+// VR BUTTON
+// ============================================================
+
+const vrButton =
+    document.getElementById(
+        "vrButton"
+    );
+
+
+vrButton.addEventListener(
+    "click",
+    async function() {
+
+        if (
+            !navigator.xr
+        ) {
+
+            alert(
+                "WebXR is not available in this browser."
+            );
+
+            return;
+        }
+
+
+        try {
+
+            const supported =
+                await navigator.xr
+                    .isSessionSupported(
+                        "immersive-vr"
+                    );
+
+
+            if (!supported) {
+
+                alert(
+                    "Immersive VR is not supported by this browser."
+                );
+
+                return;
+            }
+
+
+            const session =
+                await navigator.xr.requestSession(
+                    "immersive-vr",
+                    {
+                        optionalFeatures: [
+                            "local-floor",
+                            "bounded-floor"
+                        ]
+                    }
+                );
+
+
+            await renderer.xr.setSession(
+                session
+            );
+
+
+            document.getElementById(
+                "startScreen"
+            ).style.display =
+                "none";
+
+
+            session.addEventListener(
+                "end",
+                function() {
+
+                    document.getElementById(
+                        "startScreen"
+                    ).style.display =
+                        "flex";
+
+                }
+            );
+
+
+        } catch (error) {
+
+            console.error(error);
+
+            alert(
+                "Could not start VR:\n\n" +
+                error.message
+            );
+        }
+    }
+);
+
+
+// ============================================================
+// WINDOW RESIZE
+// ============================================================
+
+window.addEventListener(
+    "resize",
+    function() {
+
+        camera.aspect =
+            window.innerWidth /
+            window.innerHeight;
+
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(
+            window.innerWidth,
+            window.innerHeight
+        );
+    }
+);
+
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+
+function animate() {
+
+    const delta =
+        Math.min(
+            clock.getDelta(),
+            0.05
+        );
+
+
+    animateCores();
+
+    updateVRMovement(
+        delta
+    );
+
+    updateDesktopMovement(
+        delta
+    );
+
+    clampPlayer();
+
+    checkDelivery();
+
+
+    extraction.rotation.y +=
+        delta * 0.3;
+
+
+    renderer.render(
+        scene,
+        camera
+    );
+}
+
+
+renderer.setAnimationLoop(
+    animate
+);
+
+
+// ============================================================
+// START MESSAGE
+// ============================================================
+
+showMessage(
+    "FIND THE FIVE CORES"
+);
+
+</script>
+
+</body>
+</html>
